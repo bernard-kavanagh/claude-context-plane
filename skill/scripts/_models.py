@@ -18,6 +18,7 @@ See:
 from __future__ import annotations
 
 import os
+import warnings
 from datetime import date, datetime
 from typing import Optional
 
@@ -26,6 +27,22 @@ from pytidb import TiDBClient
 from pytidb.embeddings import EmbeddingFunction
 from pytidb.schema import Field, TableModel
 from sqlalchemy import JSON, TEXT
+
+# ---------------------------------------------------------------------------
+# Silence cosmetic warnings that don't affect correctness:
+#   - pydantic serializer complaining about numpy float32 arrays in vector
+#     fields (pytidb returns them; our TableModel declares list[float])
+# These warnings are noise during demo output. Vectors still round-trip
+# through TiDB's VECTOR columns cleanly — this is purely Python-side typing.
+# ---------------------------------------------------------------------------
+warnings.filterwarnings(
+    "ignore",
+    message=".*Pydantic serializer warnings.*",
+)
+warnings.filterwarnings(
+    "ignore",
+    message=".*PydanticSerializationUnexpectedValue.*",
+)
 
 load_dotenv()
 

@@ -121,6 +121,24 @@ person_note | tool_note | operational_rule | decision`
 
 Valid scopes: `global`, `project:<id>`, `person:<name>`, `tool:<name>`
 
+**Supersede a contradicted memory** when new evidence directly contradicts
+an existing one (duty 3 — inline reconciliation). First recall the old one
+to get its id, then:
+
+```bash
+python ~/.claude/skills/context-plane/scripts/write_memory.py \
+    --category <cat> \
+    --scope <scope> \
+    --content "<new knowledge that replaces the old>" \
+    --supersedes <old_memory_id>
+```
+
+The old row gets `status='superseded'` + `superseded_by=<new_id>` in one
+transaction. Dedup is skipped — the whole point is that this IS different.
+Use this when Bernard explicitly corrects something: *"actually we're going
+with Path B now, not Path A"*. Do NOT use this for mere restatements —
+those should merge via normal dedup.
+
 **Recall memories** when Bernard asks "what do you remember about X" or
 when you need to check whether a preference exists:
 

@@ -26,7 +26,7 @@ import argparse
 import json
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from _models import get_client, get_tables, update_row
@@ -106,7 +106,7 @@ def main() -> int:
 
     # Audit: flip the reasoning row to 'promoted'
     row.resolution = "promoted"
-    row.resolved_at = datetime.utcnow()
+    row.resolved_at = datetime.now(timezone.utc).replace(tzinfo=None)
     update_row(tables.reasoning, row)
 
     # Pass through write_memory's output

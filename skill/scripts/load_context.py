@@ -32,7 +32,7 @@ import argparse
 import json
 import sys
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from _models import (
     DEFAULT_TOKEN_BUDGET,
@@ -85,8 +85,8 @@ def load_p1_session(tables, session_id: str | None) -> tuple[str, int, str]:
         session_id = f"sess_{uuid.uuid4().hex[:12]}"
         row = SessionState(
             session_id=session_id,
-            started_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            started_at=datetime.now(timezone.utc).replace(tzinfo=None),
+            last_active=datetime.now(timezone.utc).replace(tzinfo=None),
             token_budget=DEFAULT_TOKEN_BUDGET,
             tokens_used=0,
         )
@@ -139,7 +139,7 @@ def load_p2_projects(tables, limit: int = 5) -> tuple[str, int]:
 
 def load_p3_recent_outcomes(tables, days: int = 7, limit: int = 10) -> tuple[str, int]:
     """Recent confirmed/promoted outcomes from agent_reasoning."""
-    since = datetime.utcnow() - timedelta(days=days)
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
 
     # pytidb's filters dict supports simple equality. For the date predicate
     # we'd need SQLAlchemy column syntax; pull a wider window and filter in
@@ -311,7 +311,7 @@ def main() -> int:
         row = tables.sessions.get(session_id)
         if row is not None:
             row.tokens_used = spent
-            row.last_active = datetime.utcnow()
+            row.last_active = datetime.now(timezone.utc).replace(tzinfo=None)
             if args.focus:
                 row.focus_summary = args.focus[:256]
             update_row(tables.sessions, row, pk_field="session_id")
@@ -321,7 +321,7 @@ def main() -> int:
     header = (
         "# Cognitive foundation — loaded context\n"
         f"_session={session_id} · tokens={spent}/{budget} · "
-        f"generated_at={datetime.utcnow().isoformat()}Z_\n"
+        f"generated_at={datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}Z_\n"
     )
     body = "\n".join(text for text, _ in parts)
     output = header + "\n" + body

@@ -19,7 +19,7 @@ import argparse
 import json
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from _models import get_client, get_tables, SessionState, update_row
 
@@ -46,8 +46,8 @@ def cmd_start(args) -> dict:
 
     row = SessionState(
         session_id=session_id,
-        started_at=datetime.utcnow(),
-        last_active=datetime.utcnow(),
+        started_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        last_active=datetime.now(timezone.utc).replace(tzinfo=None),
         focus_projects=projects,
         focus_summary=args.focus,
         investigation_summary=None,
@@ -76,7 +76,7 @@ def cmd_update(args) -> dict:
     if args.summary is not None:
         existing.investigation_summary = args.summary
 
-    existing.last_active = datetime.utcnow()
+    existing.last_active = datetime.now(timezone.utc).replace(tzinfo=None)
     update_row(tables.sessions, existing, pk_field="session_id")
 
     return {"ok": True, "session_id": args.session_id, "action": "updated"}
@@ -97,7 +97,7 @@ def cmd_end(args) -> dict:
 
     if args.summary is not None:
         existing.investigation_summary = args.summary
-    existing.last_active = datetime.utcnow()
+    existing.last_active = datetime.now(timezone.utc).replace(tzinfo=None)
     update_row(tables.sessions, existing, pk_field="session_id")
 
     return {

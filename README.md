@@ -84,12 +84,45 @@ deduplicated, decayed, and compacted by `maintenance.py`.
 |---|------|----------------|
 | 1 | **Write control** — only confirmed outcomes persist | `resolution` ENUM on `agent_reasoning`; `write_outcome.py` |
 | 2 | **Deduplication** — cosine < 0.15 merges | `write_memory.py` (inline) |
-| 3 | **Reconciliation** — new evidence supersedes old | `maintenance.py --reconcile` (daily) |
+| 3 | **Reconciliation** — new evidence supersedes old | `write_memory.py --supersedes <id>` (inline); `maintenance.py --reconcile` (daily sweep) |
 | 4 | **Confidence decay** — 5% monthly, floor at 0.30 | `maintenance.py --decay` (weekly) |
 | 5 | **Compaction** — merge drifted near-duplicates | `maintenance.py --compact` (weekly) |
 
 All five run **inside TiDB**. No external schedulers, no sync jobs.
 `maintenance.py` is just SQL over SQLAlchemy.
+
+---
+
+## Deliberate reductions from the EV-platform reference
+
+This repo mirrors the context-plane architecture of
+[`ev_charger_anomaly_detection`](https://github.com/bernard-kavanagh/ev_charger_anomaly_detection)
+with three deliberate reductions. They're scale-appropriate for personal
+use, not bugs:
+
+**1. No data plane.** The EV repo has `charger_telemetry`, `charger_windows`,
+and `outage_catalog` — tables that ingest ~112M IoT rows per day. There
+is no equivalent here. Personal knowledge work has no telemetry stream
+to reason *about*. Only the context plane matters, so only the context
+plane exists.
+
+**2. No TTL policies.** The EV schema has commented-out `ALTER TABLE ...
+TTL = ...` blocks that cap steady-state storage at ~960M rows. Personal
+scale produces tens of rows per week, so unbounded growth is a non-issue
+for years. Easy to add later if the memory store ever gets unwieldy.
+
+**3. Synchronous embedding, not async.** The EV repo pipes
+`charger_windows` writes through TiCDC → Kafka → an embedding service,
+then UPDATEs the vector column asynchronously. We use TiDB's native
+`EMBED_TEXT()` in a `GENERATED ALWAYS AS ... STORED` column — vectors
+are computed server-side on INSERT. Simpler, and works because we don't
+need the throughput the EV pipeline was designed for. The trade-off: we
+depend on TiDB Cloud's embedding providers (default is
+`tidbcloud_free/amazon/titan-embed-text-v2`), whereas the EV repo can
+swap embedding models freely.
+
+These reductions are why this is ~500 lines of Python and ~300 lines of
+SQL rather than ~2000 lines of Python, PyFlink, and TiCDC config.
 
 ---
 

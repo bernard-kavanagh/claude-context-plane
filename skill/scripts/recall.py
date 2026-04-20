@@ -17,7 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 from _models import get_client, get_tables, update_row
 
@@ -83,7 +83,7 @@ def main() -> int:
             if row is None:
                 continue
             row.access_count = (row.access_count or 0) + 1
-            row.last_accessed = datetime.utcnow()
+            row.last_accessed = datetime.now(timezone.utc).replace(tzinfo=None)
             update_row(tables.memory, row)
 
     print(json.dumps({"ok": True, "query": args.query, "hits": out}, indent=2))

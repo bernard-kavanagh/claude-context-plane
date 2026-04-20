@@ -22,7 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from _models import (
     COMPACTION_DISTANCE,
@@ -75,7 +75,7 @@ def duty_decay(client, tables) -> dict:
             ),
             {
                 "rate": DECAY_RATE,
-                "cutoff": datetime.utcnow() - timedelta(days=DECAY_AGE_DAYS),
+                "cutoff": datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=DECAY_AGE_DAYS),
                 "floor": DECAY_FLOOR,
             },
         )
@@ -210,7 +210,7 @@ def main() -> int:
     tables = get_tables(client)
 
     report = {
-        "started_at": datetime.utcnow().isoformat() + "Z",
+        "started_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
         "results": [],
     }
 
@@ -221,7 +221,7 @@ def main() -> int:
     if args.compact:
         report["results"].append(duty_compact(client, tables))
 
-    report["finished_at"] = datetime.utcnow().isoformat() + "Z"
+    report["finished_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     print(json.dumps(report, indent=2, default=str))
     return 0
 

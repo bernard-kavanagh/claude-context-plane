@@ -24,7 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 from _models import get_client, get_tables, AgentReasoning
 
@@ -92,7 +92,7 @@ def main() -> int:
         evidence_refs=evidence,
         confidence=confidence,
         resolution=args.resolution,
-        resolved_at=datetime.utcnow(),
+        resolved_at=datetime.now(timezone.utc).replace(tzinfo=None),
         tags=tags,
     )
     tables.reasoning.insert(row)

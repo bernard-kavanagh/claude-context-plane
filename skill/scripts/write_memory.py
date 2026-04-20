@@ -24,7 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 from _models import (
     DEDUP_DISTANCE_THRESHOLD,
@@ -71,6 +71,17 @@ def main() -> int:
         default=DEDUP_DISTANCE_THRESHOLD,
         help=f"Cosine distance below which we merge (default {DEDUP_DISTANCE_THRESHOLD})",
     )
+    p.add_argument(
+        "--supersedes",
+        type=int,
+        default=None,
+        help=(
+            "Duty 3 — reconciliation. fleet_memory.id of an existing memory "
+            "this write contradicts. The old row is marked status='superseded' "
+            "with superseded_by=<new_id>. The new row is inserted unconditionally "
+            "(dedup is skipped — the whole point is that this is different)."
+        ),
+    )
 
     args = p.parse_args()
 
@@ -83,6 +94,76 @@ def main() -> int:
 
     client = get_client()
     tables = get_tables(client)
+
+    # ---------------------------------------------------------------------
+    # DUTY 3 — INLINE RECONCILIATION (when --supersedes is set)
+    # ---------------------------------------------------------------------
+    # If the caller declares this write contradicts an existing memory,
+    # skip dedup (the whole point is that this is different) and mark the
+    # old row as superseded after the new one lands. This matches the
+    # article's "new evidence auto-supersedes contradicted conclusions".
+    if args.supersedes is not None:
+        old_row = tables.memory.get(args.supersedes)
+        if old_row is None:
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": f"--supersedes {args.supersedes} not found in fleet_memory",
+                    }
+                )
+            )
+            return 1
+        if old_row.status != "active":
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": (
+                            f"fleet_memory.id={args.supersedes} has status="
+                            f"{old_row.status!r}, only 'active' rows can be superseded."
+                        ),
+                    }
+                )
+            )
+            return 1
+
+        # Insert the new row first so we have its id to link from the old.
+        new_row = FleetMemory(
+            category=args.category,
+            scope=args.scope,
+            content=args.content,
+            source_refs=source_refs,
+            confidence=confidence,
+            supporting_evidence_count=1,
+            access_count=0,
+            status="active",
+        )
+        tables.memory.insert(new_row)
+
+        # Mark the old row superseded, linked to the new.
+        old_row.status = "superseded"
+        old_row.superseded_by = new_row.id
+        update_row(tables.memory, old_row)
+
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "action": "superseded",
+                    "memory_id": new_row.id,
+                    "superseded_memory_id": args.supersedes,
+                    "category": args.category,
+                    "scope": args.scope,
+                    "note": (
+                        f"fleet_memory.id={args.supersedes} now has status='superseded', "
+                        f"superseded_by={new_row.id}. Duty 3 applied inline."
+                    ),
+                },
+                indent=2,
+            )
+        )
+        return 0
 
     # ---------------------------------------------------------------------
     # DEDUP CHECK (duty 2)
@@ -110,7 +191,7 @@ def main() -> int:
                 (existing_row.supporting_evidence_count or 1) + 1
             )
             existing_row.access_count = (existing_row.access_count or 0) + 1
-            existing_row.last_accessed = datetime.utcnow()
+            existing_row.last_accessed = datetime.now(timezone.utc).replace(tzinfo=None)
             # Merge provenance
             merged_refs = list(existing_row.source_refs or [])
             for ref in source_refs or []:
