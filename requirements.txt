@@ -1,0 +1,6 @@
+# Core dependencies for claude-context-plane
+pytidb>=0.0.12
+python-dotenv>=1.0.0
+
+# pytidb brings sqlalchemy transitively, but pin it explicitly for clarity
+sqlalchemy>=2.0.0
