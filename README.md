@@ -1,5 +1,5 @@
 # claude-context-plane
-
+> **Status:** built in one session on 2026-04-20 as a working proof of the Cognitive Foundation pattern at personal scale. Used daily by the author. Probably has rough edges. Issues/PRs welcome.
 A personal-scale implementation of the **Database as Cognitive Foundation**
 pattern — the same architecture Manus uses at consumer scale and that the
 [EV charger platform](https://github.com/bernard-kavanagh/ev_charger_anomaly_detection)
