@@ -39,6 +39,7 @@ from _models import (
     SessionState,
     get_client,
     get_tables,
+    update_row,
 )
 
 
@@ -50,6 +51,29 @@ def tok(text: str) -> int:
 
 def section(title: str, body: str) -> str:
     return f"## {title}\n{body}\n"
+
+
+def _result_to_dicts(result) -> list[dict]:
+    """
+    Coerce pytidb's QueryResult into a list of plain dicts regardless of
+    which shape the installed version returns (SQLModel rows, pydantic
+    models, or raw dicts).
+    """
+    try:
+        # Most pytidb versions: QueryResult.to_list() returns list[dict]
+        return list(result.to_list())
+    except AttributeError:
+        pass
+    try:
+        # Some versions: iterable of rows
+        return [
+            r.model_dump() if hasattr(r, "model_dump")
+            else dict(r) if hasattr(r, "keys")
+            else {k: v for k, v in vars(r).items() if not k.startswith("_")}
+            for r in result
+        ]
+    except Exception:
+        return []
 
 
 def load_p1_session(tables, session_id: str | None) -> tuple[str, int, str]:
@@ -86,26 +110,15 @@ def load_p1_session(tables, session_id: str | None) -> tuple[str, int, str]:
 
 def load_p2_projects(tables, limit: int = 5) -> tuple[str, int]:
     """Active projects ordered by last_touched DESC."""
-    rows = (
-        tables.projects
-        .query({"status": "active"})
-        .order_by("last_touched", "desc")
-        .limit(limit)
-        .to_list()
-    ) if hasattr(tables.projects, "query") else []
-
-    # Fallback: pytidb Table API varies — use raw query if .query() missing
-    if not rows:
-        try:
-            rows = tables.projects.query(filters={"status": "active"}, limit=limit)
-            rows = [r.__dict__ if hasattr(r, "__dict__") else dict(r) for r in rows]
-        except Exception:
-            # Last resort: select all active and sort in Python
-            try:
-                all_active = tables.projects.query({"status": "active"})
-                rows = [r.__dict__ for r in all_active][:limit]
-            except Exception:
-                rows = []
+    try:
+        result = tables.projects.query(
+            filters={"status": "active"},
+            order_by={"last_touched": "desc"},
+            limit=limit,
+        )
+        rows = _result_to_dicts(result)
+    except Exception:
+        rows = []
 
     if not rows:
         return ("", 0)
@@ -128,16 +141,25 @@ def load_p3_recent_outcomes(tables, days: int = 7, limit: int = 10) -> tuple[str
     """Recent confirmed/promoted outcomes from agent_reasoning."""
     since = datetime.utcnow() - timedelta(days=days)
 
+    # pytidb's filters dict supports simple equality. For the date predicate
+    # we'd need SQLAlchemy column syntax; pull a wider window and filter in
+    # Python. For personal scale (tens of rows/week) this is fine.
     try:
-        rows = (
-            tables.reasoning.query(
-                {"resolution": ["confirmed", "promoted"]},
-                limit=limit,
-            )
+        result = tables.reasoning.query(
+            filters={"resolution": "confirmed"},
+            order_by={"created_at": "desc"},
+            limit=limit * 3,
         )
-        rows = [r.__dict__ if hasattr(r, "__dict__") else dict(r) for r in rows]
-        # Filter by date + sort in Python (pytidb Table API doesn't expose
-        # arbitrary WHERE predicates uniformly).
+        confirmed = _result_to_dicts(result)
+
+        result = tables.reasoning.query(
+            filters={"resolution": "promoted"},
+            order_by={"created_at": "desc"},
+            limit=limit * 3,
+        )
+        promoted = _result_to_dicts(result)
+
+        rows = confirmed + promoted
         rows = [r for r in rows if r.get("created_at") and r["created_at"] >= since]
         rows.sort(key=lambda r: r.get("created_at") or datetime.min, reverse=True)
         rows = rows[:limit]
@@ -201,13 +223,12 @@ def load_p4_semantic_hits(tables, focus_text: str | None, limit: int = 6) -> tup
 def load_p5_top_confidence(tables, limit: int = 8) -> tuple[str, int]:
     """Top-confidence active global memories — always-on context."""
     try:
-        rows = tables.memory.query(
-            {"status": "active", "scope": "global"},
-            limit=50,
+        result = tables.memory.query(
+            filters={"status": "active", "scope": "global"},
+            order_by={"confidence": "desc"},
+            limit=limit,
         )
-        rows = [r.__dict__ if hasattr(r, "__dict__") else dict(r) for r in rows]
-        rows.sort(key=lambda r: float(r.get("confidence") or 0), reverse=True)
-        rows = rows[:limit]
+        rows = _result_to_dicts(result)
     except Exception:
         rows = []
 
@@ -293,7 +314,7 @@ def main() -> int:
             row.last_active = datetime.utcnow()
             if args.focus:
                 row.focus_summary = args.focus[:256]
-            tables.sessions.update(row)
+            update_row(tables.sessions, row, pk_field="session_id")
     except Exception:
         pass
 

@@ -31,6 +31,7 @@ from _models import (
     FleetMemory,
     get_client,
     get_tables,
+    update_row,
 )
 
 VALID_CATEGORIES = {
@@ -120,7 +121,7 @@ def main() -> int:
             existing_row.confidence = min(
                 1.0, (existing_row.confidence or 0.70) + 0.02
             )
-            tables.memory.update(existing_row)
+            update_row(tables.memory, existing_row)
 
             print(
                 json.dumps(

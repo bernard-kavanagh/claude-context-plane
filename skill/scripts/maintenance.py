@@ -31,6 +31,7 @@ from _models import (
     DECAY_RATE,
     get_client,
     get_tables,
+    update_row,
 )
 
 
@@ -177,8 +178,8 @@ def duty_compact(client, tables) -> dict:
         loser.status = "superseded"
         loser.superseded_by = winner_id
 
-        tables.memory.update(winner)
-        tables.memory.update(loser)
+        update_row(tables.memory, winner)
+        update_row(tables.memory, loser)
         seen_loser_ids.add(loser_id)
         merges += 1
 

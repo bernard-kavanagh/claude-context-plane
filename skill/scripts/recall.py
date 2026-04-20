@@ -19,7 +19,7 @@ import json
 import sys
 from datetime import datetime
 
-from _models import get_client, get_tables
+from _models import get_client, get_tables, update_row
 
 
 def main() -> int:
@@ -84,7 +84,7 @@ def main() -> int:
                 continue
             row.access_count = (row.access_count or 0) + 1
             row.last_accessed = datetime.utcnow()
-            tables.memory.update(row)
+            update_row(tables.memory, row)
 
     print(json.dumps({"ok": True, "query": args.query, "hits": out}, indent=2))
     return 0

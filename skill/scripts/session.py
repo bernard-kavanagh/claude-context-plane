@@ -21,7 +21,7 @@ import sys
 import uuid
 from datetime import datetime
 
-from _models import get_client, get_tables, SessionState
+from _models import get_client, get_tables, SessionState, update_row
 
 
 def _session_to_dict(s: SessionState) -> dict:
@@ -77,7 +77,7 @@ def cmd_update(args) -> dict:
         existing.investigation_summary = args.summary
 
     existing.last_active = datetime.utcnow()
-    tables.sessions.update(existing)
+    update_row(tables.sessions, existing, pk_field="session_id")
 
     return {"ok": True, "session_id": args.session_id, "action": "updated"}
 
@@ -98,7 +98,7 @@ def cmd_end(args) -> dict:
     if args.summary is not None:
         existing.investigation_summary = args.summary
     existing.last_active = datetime.utcnow()
-    tables.sessions.update(existing)
+    update_row(tables.sessions, existing, pk_field="session_id")
 
     return {
         "ok": True,

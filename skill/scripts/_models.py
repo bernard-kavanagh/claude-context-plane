@@ -176,14 +176,24 @@ def get_client() -> TiDBClient:
     """
     Build a TiDBClient from .env. Required keys:
         TIDB_HOST, TIDB_PORT, TIDB_USER, TIDB_PASSWORD, TIDB_DATABASE
+    Optional:
+        TIDB_SSL_CA — path to the TiDB Cloud CA bundle (isrgrootx1.pem).
+                      Required on TiDB Cloud Essentials/Starter/Dedicated
+                      unless your system trust store already has ISRG Root X1.
+
+    pytidb forwards **kwargs straight through to SQLAlchemy's create_engine(),
+    which does NOT accept ssl_* as top-level args — they must be wrapped in
+    `connect_args={...}` so SQLAlchemy hands them to pymysql.Connection().
+    This is the canonical pattern from TiDB's official SQLAlchemy guide.
     """
     host = os.environ["TIDB_HOST"]
     port = int(os.environ.get("TIDB_PORT", "4000"))
     user = os.environ["TIDB_USER"]
     password = os.environ["TIDB_PASSWORD"]
     database = os.environ.get("TIDB_DATABASE", "claude_context")
+    ssl_ca = os.environ.get("TIDB_SSL_CA")
 
-    return TiDBClient.connect(
+    connect_kwargs = dict(
         host=host,
         port=port,
         username=user,
@@ -191,6 +201,17 @@ def get_client() -> TiDBClient:
         database=database,
         ensure_db=True,
     )
+
+    if ssl_ca:
+        # Wrap ssl options in connect_args so SQLAlchemy passes them to
+        # pymysql.Connection() instead of trying to consume them itself.
+        connect_kwargs["connect_args"] = {
+            "ssl_verify_cert": True,
+            "ssl_verify_identity": True,
+            "ssl_ca": ssl_ca,
+        }
+
+    return TiDBClient.connect(**connect_kwargs)
 
 
 def get_tables(client: TiDBClient):
@@ -207,6 +228,47 @@ def get_tables(client: TiDBClient):
         sessions = client.create_table(schema=SessionState, if_exists="skip")
 
     return _T
+
+
+# ---------------------------------------------------------------------------
+# Compatibility helpers — pytidb's Table.update() takes (values_dict, filters).
+# Our scripts use the intuitive "mutate a row, then save it" pattern. This
+# adapter bridges the two so we don't have to restructure every caller.
+# ---------------------------------------------------------------------------
+
+
+def update_row(table, row, pk_field: str = "id") -> None:
+    """
+    Save `row` back to `table` by diffing it against what's in the database
+    and issuing a targeted UPDATE on just the primary key.
+
+    Uses the row's current field values as the new values, and filters by
+    the row's primary key. This is the behaviour every caller assumed when
+    they wrote `table.update(row)`.
+    """
+    from sqlmodel import SQLModel
+
+    pk_value = getattr(row, pk_field)
+    if pk_value is None:
+        raise ValueError(f"cannot update row without {pk_field}")
+
+    # Build values dict from the row's current state. Exclude the PK itself
+    # (it's in the filter, not in the SET clause).
+    if isinstance(row, SQLModel):
+        values = row.model_dump(exclude={pk_field})
+    else:
+        # Fallback for plain objects
+        values = {
+            k: v for k, v in vars(row).items()
+            if not k.startswith("_") and k != pk_field
+        }
+
+    # Strip vector columns from the update payload — they're auto-generated
+    # by EMBED_TEXT() and are read-only after insert.
+    for vec_col in ("reasoning_vec", "memory_vec"):
+        values.pop(vec_col, None)
+
+    table.update(values=values, filters={pk_field: pk_value})
 
 
 # ---------------------------------------------------------------------------

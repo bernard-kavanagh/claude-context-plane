@@ -29,7 +29,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from _models import get_client, get_tables
+from _models import get_client, get_tables, update_row
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
@@ -107,7 +107,7 @@ def main() -> int:
     # Audit: flip the reasoning row to 'promoted'
     row.resolution = "promoted"
     row.resolved_at = datetime.utcnow()
-    tables.reasoning.update(row)
+    update_row(tables.reasoning, row)
 
     # Pass through write_memory's output
     sys.stdout.write(result.stdout)
